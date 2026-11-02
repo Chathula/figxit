@@ -246,19 +246,25 @@ _figxit_esc() {
   (( _figxit_visible )) && _figxit_send "K${_figxit_sep}esc"
 }
 
+_figxit_key() {
+  REPLY=$1
+  REPLY=${REPLY//\\M-\[/\\e[}
+  REPLY=${REPLY//\\M-O/\\eO}
+}
+
 _figxit_bind() {
   local line key value id=0 name
   local -A function macro command
   local -A nav=(['\C-i']=tab ['\C-m']=enter ['\C-j']=enter ['\e[A']='move up' ['\eOA']='move up' ['\e[B']='move down' ['\eOB']='move down')
   local edit=' \C-? \C-h \C-w \C-u \C-k \C-y \C-b \C-f \C-a \C-e \C-p \C-n \e[C \e[D \eOC \eOD \e[H \e[F \eOH \eOF \e[3~ \e\C-? \e\C-h \ed \eb \ef '
   while IFS= read -r line; do
-    [[ $line =~ ^\"(.+)\":\ (.+)$ ]] && function[${BASH_REMATCH[1]}]=${BASH_REMATCH[2]}
+    if [[ $line =~ ^\"(.+)\":\ (.+)$ ]]; then _figxit_key "${BASH_REMATCH[1]}"; function[$REPLY]=${BASH_REMATCH[2]}; fi
   done < <(bind -m emacs -p)
   while IFS= read -r line; do
-    [[ $line =~ ^\"(.+)\":\ \"(.*)\"$ ]] && macro[${BASH_REMATCH[1]}]=${BASH_REMATCH[2]}
+    if [[ $line =~ ^\"(.+)\":\ \"(.*)\"$ ]]; then _figxit_key "${BASH_REMATCH[1]}"; macro[$REPLY]=${BASH_REMATCH[2]}; fi
   done < <(bind -m emacs -s)
   while IFS= read -r line; do
-    [[ $line =~ ^\"(.+)\":?\ \"(.*)\"$ ]] && command[${BASH_REMATCH[1]}]=${BASH_REMATCH[2]}
+    if [[ $line =~ ^\"(.+)\":?\ \"(.*)\"$ ]]; then _figxit_key "${BASH_REMATCH[1]}"; command[$REPLY]=${BASH_REMATCH[2]}; fi
   done < <(bind -m emacs -X)
 
   bind -m emacs -x '"\C-x\C-_h": _figxit_hook'

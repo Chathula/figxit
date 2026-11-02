@@ -20,7 +20,8 @@ typeset -g _figxit_sep=$'\x1f'
 typeset -g _figxit_fd=
 typeset -g _figxit_last= _figxit_size= _figxit_cell= _figxit_asked=
 typeset -gF _figxit_asked_at=0
-typeset -gi _figxit_visible=0 _figxit_retry=0 _figxit_depth=0 _figxit_reports=1
+typeset -gi _figxit_visible=0 _figxit_retry=0 _figxit_depth=0 _figxit_reports=1 _figxit_pending=0
+typeset -g _figxit_keymap=main
 typeset -gA _figxit_orig _figxit_base
 typeset -gA _figxit_keys=(
   '"^I"' figxit-tab
@@ -37,6 +38,7 @@ _figxit_close() {
   exec {_figxit_fd}>&-
   _figxit_fd=
   _figxit_visible=0
+  (( $+functions[_figxit_arrows] )) && _figxit_arrows
 }
 
 _figxit_send() {
@@ -67,7 +69,7 @@ _figxit_connect() {
     return 1
   fi
   _figxit_fd=$REPLY
-  zle -F -w $_figxit_fd _figxit_recv
+  zle -F $_figxit_fd _figxit_recv
   _figxit_send "H${_figxit_sep}$$${_figxit_sep}${TMUX%%,*}${_figxit_sep}${TMUX_PANE}${_figxit_sep}${PATH}${_figxit_sep}${TERM_PROGRAM}${_figxit_sep}${HERDR_PANE_ID}${_figxit_sep}${HERDR_SOCKET_PATH}${_figxit_sep}${HERDR_BIN_PATH}"
 }
 
@@ -80,7 +82,7 @@ _figxit_ask() {
     _figxit_asked=
     _figxit_reports=0
   fi
-  if (( ! _figxit_reports || PENDING )) || [[ $KEYMAP != main ]]; then
+  if (( ! _figxit_reports || _figxit_pending )) || [[ $_figxit_keymap != main ]]; then
     _figxit_send "C${_figxit_sep}$1"
     return
   fi
@@ -142,7 +144,10 @@ figxit-report() {
 _figxit_apply() {
   local -a f
   f=("${(@ps:$_figxit_sep:)1}")
-  [[ $f[1] == S ]] && _figxit_visible=$f[2]
+  [[ $f[1] == S ]] || return
+  local was=$_figxit_visible
+  _figxit_visible=$f[2]
+  (( was != _figxit_visible )) && _figxit_arrows
 }
 
 _figxit_drop() {
@@ -246,6 +251,26 @@ _figxit_bind_esc() {
   bindkey -M main '\e' figxit-esc
 }
 
+_figxit_arrows() {
+  local seq orig
+  for seq in '^[[A' '^[OA'; do
+    if (( _figxit_visible )); then
+      bindkey -M main $seq figxit-up
+    else
+      orig=${_figxit_orig[figxit-up]:-_figxit_base[figxit-up]:-up-line-or-history}
+      bindkey -M main $seq $orig
+    fi
+  done
+  for seq in '^[[B' '^[OB'; do
+    if (( _figxit_visible )); then
+      bindkey -M main $seq figxit-down
+    else
+      orig=${_figxit_orig[figxit-down]:-_figxit_base[figxit-down]:-down-line-or-history}
+      bindkey -M main $seq $orig
+    fi
+  done
+}
+
 _figxit_bind() {
   local line key widget ours
   for line in ${(f)"$(bindkey -M main)"}; do
@@ -256,15 +281,19 @@ _figxit_bind() {
     [[ $widget == "$ours" ]] && continue
     [[ -n $_figxit_base[$ours] ]] || _figxit_base[$ours]=$widget
     _figxit_orig[$ours]=$widget
+    [[ $ours == figxit-up || $ours == figxit-down ]] && continue
     bindkey -M main ${(Q)key} $ours
   done
   _figxit_bind_esc
   bindkey -M main '^[[?' figxit-report
+  _figxit_arrows
 }
 
 _figxit_line_init() {
   _figxit_last=
   _figxit_visible=0
+  _figxit_pending=0
+  _figxit_keymap=main
   _figxit_connect || return 0
   _figxit_bind
   _figxit_send L
@@ -275,9 +304,17 @@ _figxit_redraw() {
     _figxit_connect || return 0
     _figxit_bind
   fi
-  (( PENDING )) && return 0
+  (( PENDING )) && { _figxit_pending=1; return 0; }
+  _figxit_pending=0
+  _figxit_keymap=$KEYMAP
   if [[ $KEYMAP == vicmd ]]; then
     (( _figxit_visible )) && _figxit_send "K${_figxit_sep}esc"
+    return 0
+  fi
+  local up=${_figxit_orig[figxit-up]:-} down=${_figxit_orig[figxit-down]:-}
+  if [[ ( -n $up && $LASTWIDGET == $up ) || ( -n $down && $LASTWIDGET == $down ) ]]; then
+    _figxit_last="$CURSOR$_figxit_sep$BUFFER"
+    _figxit_send N
     return 0
   fi
   local state="$CURSOR$_figxit_sep$BUFFER"
@@ -312,7 +349,6 @@ _figxit_hook() {
   fi
 }
 
-zle -N _figxit_recv
 zle -N figxit-tab
 zle -N figxit-report
 zle -N figxit-enter
