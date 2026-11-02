@@ -230,6 +230,7 @@ function onLine(s: Session, line: string) {
       edit(s, Number(f[1]) || 0, f[2] ?? "", (f[3] ?? "").replaceAll("\x1e", "\n"));
       break;
     case "K":
+      if (!s.visible) s.socket.write(`S${SEP}0\n`);
       navigate(s, f[1] ?? "down");
       break;
     case "A":
@@ -244,6 +245,7 @@ function onLine(s: Session, line: string) {
       break;
     case "N":
       hide(s);
+      if (!s.visible) s.socket.write(`S${SEP}0\n`);
       break;
   }
 }

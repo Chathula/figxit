@@ -300,6 +300,22 @@ try {
   check("the shell works after an Escape with the popup closed", screen().includes("esc-ok") && !/error|not found/i.test(screen()), screen());
 
   if (name === "zsh") {
+    await keys("echo alpha");
+    await keys("Enter");
+    await keys("echo beta");
+    await keys("Enter");
+    await keys("chained() { [[ $LASTWIDGET == chained || -z $BUFFER ]] && zle .up-history }; zle -N chained; bindkey '^[[A' chained");
+    await keys("Enter");
+    await keys("Up");
+    await keys("Up");
+    await keys("Up");
+    check("a stateful Up widget runs natively", /^> +echo alpha$/.test(screen().split("\n").at(-1) ?? ""), screen());
+    await keys("C-u");
+    await keys("bindkey '^[[A' up-line-or-history");
+    await keys("Enter");
+  }
+
+  if (name === "zsh") {
     await keys("bindkey -v");
     await keys("Enter");
     await keys("make ");
